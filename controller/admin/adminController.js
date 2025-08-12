@@ -1,7 +1,7 @@
 
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import adminModel from "../../model/admin/adminModel";
+import adminModel from "../../model/admin/adminModel.js";
 
 // Register admin
 export const registerAdmin = async (req, res) => {
