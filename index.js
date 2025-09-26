@@ -22,6 +22,8 @@ import cartRouter from "./routes/user/cartRoutes.js";
 import couponRouter from "./routes/admin/couponRoutes.js";
 import orderRouter from "./routes/user/orderRoutes.js";
 import collectionRouter from "./routes/admin/collectionRoutes.js";
+import shippingSalesRouter from "./routes/admin/shippingSalesRoutes.js";
+import offerRouter from "./routes/admin/offerRoutes.js";
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -50,6 +52,8 @@ app.use("/cart", cartRouter);
 app.use("/coupons", couponRouter);
 app.use("/order", orderRouter);
 app.use("/collection", collectionRouter);
+app.use("/shipping" , shippingSalesRouter);
+app.use("/offer" , offerRouter);
 // ✅ Fix for __dirname and __filename in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
