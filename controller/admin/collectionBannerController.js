@@ -2,7 +2,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import dotenv from "dotenv";
-import ArrivalBanner from "../../model/admin/arrivalBannerModel.js";
+import Banner from "../../model/admin/collectionBannerModel.js";
 
 dotenv.config();
 
@@ -15,7 +15,7 @@ const s3 = new S3Client({
   }
 });
 
-// Helper upload
+// Upload helper
 const uploadToS3 = async (file) => {
   const fileKey = `${uuidv4()}${path.extname(file.originalname)}`;
   const uploadParams = {
@@ -28,7 +28,7 @@ const uploadToS3 = async (file) => {
   return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
 };
 
-// Helper delete
+// Delete helper
 const deleteFromS3 = async (fileUrl) => {
   try {
     const key = fileUrl.split("/").pop();
@@ -38,21 +38,53 @@ const deleteFromS3 = async (fileUrl) => {
   }
 };
 
-// CRUD
-
-
-export const getBanner = async (req, res) => {
+// CRUD Operations
+export const uploadCollectionBanner = async (req, res) => {
   try {
-    const banner = await ArrivalBanner.findOne().sort({ createdAt: -1 });
+    if (!req.files || !req.files.image || !req.files.mobImage) {
+      return res.status(400).json({ 
+        message: "Both desktop image and mobile image are required" 
+      });
+    }
+
+    const imageUrl = await uploadToS3(req.files.image[0]);
+    const mobImageUrl = await uploadToS3(req.files.mobImage[0]);
+
+    const banner = await Banner.create({ 
+      image: imageUrl, 
+      mobImage: mobImageUrl 
+    });
+
+    res.status(201).json({ 
+      message: "Collection banner uploaded successfully", 
+      banner 
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getCollectionBanner = async (req, res) => {
+  try {
+    const banner = await Banner.findOne().sort({ createdAt: -1 });
     res.status(200).json(banner || {});
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-export const updateBanner = async (req, res) => {
+export const getAllCollectionBanners = async (req, res) => {
   try {
-    const banner = await ArrivalBanner.findById(req.params.id);
+    const banners = await Banner.find().sort({ createdAt: -1 });
+    res.status(200).json(banners);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateCollectionBanner = async (req, res) => {
+  try {
+    const banner = await Banner.findById(req.params.id);
     if (!banner) {
       return res.status(404).json({ message: "Banner not found" });
     }
@@ -79,39 +111,19 @@ export const updateBanner = async (req, res) => {
   }
 };
 
-export const uploadBanner = async (req, res) => {
+export const deleteCollectionBanner = async (req, res) => {
   try {
-    if (!req.files || !req.files.image || !req.files.mobImage) {
-      return res.status(400).json({ 
-        message: "Both desktop image and mobile image are required" 
-      });
+    const banner = await Banner.findById(req.params.id);
+    if (!banner) {
+      return res.status(404).json({ message: "Banner not found" });
     }
 
-    const imageUrl = await uploadToS3(req.files.image[0]);
-    const mobImageUrl = await uploadToS3(req.files.mobImage[0]);
-
-    const banner = await ArrivalBanner.create({ 
-      image: imageUrl, 
-      mobImage: mobImageUrl 
-    });
-
-    res.status(201).json({ 
-      message: "Banner uploaded successfully", 
-      banner 
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const deleteBanner = async (req, res) => {
-  try {
-    const banner = await ArrivalBanner.findById(req.params.id);
-    if (!banner) return res.status(404).json({ message: "Not found" });
-
+    // Delete both images from S3
     await deleteFromS3(banner.image);
-    await banner.deleteOne();
-    res.status(200).json({ message: "Deleted" });
+    await deleteFromS3(banner.mobImage);
+    
+    await Banner.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: "Banner deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

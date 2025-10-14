@@ -2,7 +2,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import dotenv from "dotenv";
-import ArrivalBanner from "../../model/admin/arrivalBannerModel.js";
+import ArrivalBanner from "../../model/admin/shopAllBannerModel.js";
 
 dotenv.config();
 

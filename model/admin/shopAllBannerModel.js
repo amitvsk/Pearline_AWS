@@ -1,8 +1,8 @@
 import mongoose from "mongoose";
 
-const arrivalBannerSchema = new mongoose.Schema({
+const shopallBannerSchema = new mongoose.Schema({
   image: { type: String, required: true },
   mobImage: { type: String, required: true }
 }, { timestamps: true });
 
-export default mongoose.model("ArrivalBanner", arrivalBannerSchema);
+export default mongoose.model("ShopallBanner", shopallBannerSchema);

@@ -42,6 +42,8 @@ export const createCollection = async (req, res) => {
       link: req.body.link,
       homePageDisplay: req.body.homePageDisplay || false,
       pearlineCollection: req.body.pearlineCollection || "none",
+      homePageDisplay2: req.body.homePageDisplay2 || false,
+      pearlineCollection2: req.body.pearlineCollection2 || "none",
     });
 
     res.status(201).json(collection);
@@ -86,6 +88,8 @@ export const updateCollection = async (req, res) => {
       link: req.body.link,
       homePageDisplay: req.body.homePageDisplay || false,
       pearlineCollection: req.body.pearlineCollection || "none",
+         homePageDisplay2: req.body.homePageDisplay2 || false,
+      pearlineCollection2: req.body.pearlineCollection2 || "none",
     };
 
     if (imageUrl) updatedData.image = imageUrl;
@@ -128,6 +132,28 @@ export const getCollections = async (req, res) => {
     // ✅ check pearline collection query
     if (req.query.pearlineCollection) {
       query.pearlineCollection = req.query.pearlineCollection;
+    }
+
+    const collections = await Collection.find(query).sort({ createdAt: -1 });
+    res.json(collections);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+export const getCollections2 = async (req, res) => {
+  try {
+    const query = {};
+
+    // ✅ check homepage display query
+    if (req.query.homePageDisplay2) {
+      query.homePageDisplay2 = req.query.homePageDisplay2 === "true";
+    }
+
+    // ✅ check pearline collection query
+    if (req.query.pearlineCollection2) {
+      query.pearlineCollection2 = req.query.pearlineCollection2;
     }
 
     const collections = await Collection.find(query).sort({ createdAt: -1 });

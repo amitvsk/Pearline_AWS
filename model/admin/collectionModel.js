@@ -11,6 +11,12 @@ const collectionSchema = new mongoose.Schema(
       enum: ["1", "2", "3", "4", "none"],
       default: "none",
     },
+     homePageDisplay2: { type: Boolean, default: false },
+    pearlineCollection2: {
+      type: String,
+      enum: ["1", "2",  "none"],
+      default: "none",
+    },
   },
   { timestamps: true }
 );

@@ -2,7 +2,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import dotenv from "dotenv";
-import ArrivalBanner from "../../model/admin/arrivalBannerModel.js";
+import offferBannerModel from "../../model/admin/homebanner2Model.js";
 
 dotenv.config();
 
@@ -39,11 +39,20 @@ const deleteFromS3 = async (fileUrl) => {
 };
 
 // CRUD
-
+export const uploadBanner = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "Image required" });
+    const imageUrl = await uploadToS3(req.file);
+    const doc = await offferBannerModel.create({ image: imageUrl });
+    res.status(201).json({ message: "Banner uploaded", banner: doc });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 export const getBanner = async (req, res) => {
   try {
-    const banner = await ArrivalBanner.findOne().sort({ createdAt: -1 });
+    const banner = await offferBannerModel.findOne().sort({ createdAt: -1 });
     res.status(200).json(banner || {});
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -52,53 +61,15 @@ export const getBanner = async (req, res) => {
 
 export const updateBanner = async (req, res) => {
   try {
-    const banner = await ArrivalBanner.findById(req.params.id);
-    if (!banner) {
-      return res.status(404).json({ message: "Banner not found" });
-    }
+    const banner = await offferBannerModel.findById(req.params.id);
+    if (!banner) return res.status(404).json({ message: "Not found" });
 
-    // Update desktop image if provided
-    if (req.files && req.files.image) {
+    if (req.file) {
       await deleteFromS3(banner.image);
-      banner.image = await uploadToS3(req.files.image[0]);
+      banner.image = await uploadToS3(req.file);
     }
-
-    // Update mobile image if provided
-    if (req.files && req.files.mobImage) {
-      await deleteFromS3(banner.mobImage);
-      banner.mobImage = await uploadToS3(req.files.mobImage[0]);
-    }
-
     await banner.save();
-    res.status(200).json({ 
-      message: "Banner updated successfully", 
-      banner 
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-export const uploadBanner = async (req, res) => {
-  try {
-    if (!req.files || !req.files.image || !req.files.mobImage) {
-      return res.status(400).json({ 
-        message: "Both desktop image and mobile image are required" 
-      });
-    }
-
-    const imageUrl = await uploadToS3(req.files.image[0]);
-    const mobImageUrl = await uploadToS3(req.files.mobImage[0]);
-
-    const banner = await ArrivalBanner.create({ 
-      image: imageUrl, 
-      mobImage: mobImageUrl 
-    });
-
-    res.status(201).json({ 
-      message: "Banner uploaded successfully", 
-      banner 
-    });
+    res.status(200).json({ message: "Updated", banner });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -106,7 +77,7 @@ export const uploadBanner = async (req, res) => {
 
 export const deleteBanner = async (req, res) => {
   try {
-    const banner = await ArrivalBanner.findById(req.params.id);
+    const banner = await offferBannerModel.findById(req.params.id);
     if (!banner) return res.status(404).json({ message: "Not found" });
 
     await deleteFromS3(banner.image);
