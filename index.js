@@ -61,18 +61,20 @@ app.use("/shipping" , shippingSalesRouter);
 app.use("/offer" , offerRouter);
 app.use("/homebanner2" , homebanner2Router);
 // ✅ Fix for __dirname and __filename in ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
 
-// Serve static frontend
-app.use(express.static(path.join(__dirname, 'build'))); // Change 'build' if needed
+// // Serve static frontend
+// app.use(express.static(path.join(__dirname, 'build'))); // Change 'build' if needed
 
-// Redirect all requests to index.html
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'build', 'index.html'));
-});
+// // Redirect all requests to index.html
+// app.get(/.*/, (req, res) => {
+//   res.sendFile(path.join(__dirname, 'build', 'index.html'));
+// });
 
-
+app.use("/",(req,res)=>{
+  return res.status(200).json({status:true,message:"welcome to pearline"})
+})
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
