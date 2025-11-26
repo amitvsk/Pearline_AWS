@@ -502,78 +502,78 @@ const deleteFromS3 = async (fileUrl) => {
 export const createProduct = async (req, res) => {
   try {
     // Main product image (single)
-    const mainImageFile = (req.files || []).find((f) => f.fieldname === "image")
-    const mainImageUrl = mainImageFile ? await uploadToS3(mainImageFile) : ""
+    const mainImageFile = req.files.image ? req.files.image[0] : null;
+    const mainImageUrl = mainImageFile ? await uploadToS3(mainImageFile) : "";
 
     // Product gallery images (multiple 'images')
-    const productGalleryFiles = (req.files || []).filter((f) => f.fieldname === "images")
-    const galleryUrls = await Promise.all(productGalleryFiles.map((f) => uploadToS3(f)))
+    const productGalleryFiles = req.files.images || [];
+    const galleryUrls = await Promise.all(productGalleryFiles.map(f => uploadToS3(f)));
 
     // Variants JSON
-    let variants = []
+    let variants = [];
     if (req.body.variants) {
       try {
-        variants = JSON.parse(req.body.variants)
+        variants = JSON.parse(req.body.variants);
       } catch {
-        variants = []
+        variants = [];
       }
     }
 
-    // Variant main images appended under 'variantImages' (one per variant, optional)
-    const variantMainFiles = (req.files || []).filter((f) => f.fieldname === "variantImages")
+    // Variant main images
+    const variantMainFiles = req.files.variantImages || [];
 
-    const variantGalleryMap = {}
-    ;(req.files || [])
-      .filter((f) => /^variantImages_\d+$/.test(f.fieldname))
-      .forEach((f) => {
-        const idx = Number(f.fieldname.split("_")[1])
+    // Variant gallery images - handle dynamic field names
+    const variantGalleryMap = {};
+    Object.keys(req.files).forEach(key => {
+      if (key.startsWith('variantImages_')) {
+        const idx = Number(key.split('_')[1]);
         if (!Number.isNaN(idx)) {
-          if (!variantGalleryMap[idx]) variantGalleryMap[idx] = []
-          variantGalleryMap[idx].push(f)
+          variantGalleryMap[idx] = req.files[key];
         }
-      })
+      }
+    });
 
     // Build each variant
     for (let i = 0; i < variants.length; i++) {
       // Variant main image (optional, based on order of variantImages)
       if (variantMainFiles[i]) {
-        variants[i].image = await uploadToS3(variantMainFiles[i])
+        variants[i].image = await uploadToS3(variantMainFiles[i]);
       } else if (!variants[i].image) {
-        variants[i].image = ""
+        variants[i].image = "";
       }
 
       // Variant gallery images
-      const files = variantGalleryMap[i] || []
+      const files = variantGalleryMap[i] || [];
       if (files.length > 0) {
-        const urls = await Promise.all(files.map((f) => uploadToS3(f)))
-        variants[i].images = urls
+        const urls = await Promise.all(files.map(f => uploadToS3(f)));
+        variants[i].images = urls;
         // If no explicit main image, set to first gallery
         if (!variants[i].image && urls.length > 0) {
-          variants[i].image = urls[0]
+          variants[i].image = urls[0];
         }
       } else if (!Array.isArray(variants[i].images)) {
-        variants[i].images = []
+        variants[i].images = [];
       }
 
       // Ensure all variant fields from model exist (defaulting)
-      variants[i].name = variants[i].name || ""
-      variants[i].price = variants[i].price ?? 0
-      variants[i].discount = variants[i].discount ?? 0
-      variants[i].usdPrice = variants[i].usdPrice ?? null //
-      variants[i].usdDiscount = variants[i].usdDiscount ?? 0
-      variants[i].color = variants[i].color || ""
-      variants[i].stock = variants[i].stock ?? 0
-      variants[i].rating = variants[i].rating ?? 0
-      variants[i].status = variants[i].status || "Available"
+      variants[i].name = variants[i].name || "";
+      variants[i].price = variants[i].price ?? 0;
+      variants[i].discount = variants[i].discount ?? 0;
+      variants[i].usdPrice = variants[i].usdPrice ?? null;
+      variants[i].usdDiscount = variants[i].usdDiscount ?? 0;
+      variants[i].color = variants[i].color || "";
+      variants[i].stock = variants[i].stock ?? 0;
+      variants[i].rating = variants[i].rating ?? 0;
+      variants[i].status = variants[i].status || "Available";
     }
 
     // Reviews
-    let reviews = []
+    let reviews = [];
     if (req.body.reviews) {
       try {
-        reviews = JSON.parse(req.body.reviews)
+        reviews = JSON.parse(req.body.reviews);
       } catch {
-        reviews = []
+        reviews = [];
       }
     }
 
@@ -599,81 +599,169 @@ export const createProduct = async (req, res) => {
       careInstructions: req.body.careInstructions || "",
       shippingAndReturn: req.body.shippingAndReturn || "",
       reviews,
-    })
+    });
 
-    return res.status(201).json(product)
+    return res.status(201).json(product);
   } catch (err) {
-    console.error("❌ Error creating product:", err)
-    return res.status(500).json({ message: err.message })
+    console.error("❌ Error creating product:", err);
+    return res.status(500).json({ message: err.message });
   }
-}
+};
+
 
 export const updateProduct = async (req, res) => {
   try {
-    const product = await productModel.findById(req.params.id)
-    if (!product) return res.status(404).json({ message: "Product not found" })
+    const product = await productModel.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
 
-    // handle new image uploads
-    if (req.files && req.files.length > 0) {
-      // delete old S3 images
-      if (product.images && product.images.length > 0) {
-        for (const img of product.images) {
-          await deleteFromS3(img)
+    // Store old URLs for cleanup
+    const oldImages = {
+      main: product.image,
+      gallery: [...(product.images || [])],
+      variants: (product.variants || []).map(v => ({
+        main: v.image,
+        gallery: [...(v.images || [])]
+      }))
+    };
+
+    // Handle files - req.files is now an object
+    if (req.files) {
+      // Handle main product image update
+      if (req.files.image && req.files.image[0]) {
+        const mainImageFile = req.files.image[0];
+        // Delete old main image
+        if (product.image) await deleteFromS3(product.image);
+        // Upload new main image
+        product.image = await uploadToS3(mainImageFile);
+      }
+
+      // Handle product gallery images
+      if (req.files.images && req.files.images.length > 0) {
+        // Delete old gallery images
+        if (product.images && product.images.length > 0) {
+          for (const img of product.images) {
+            if (img) await deleteFromS3(img);
+          }
         }
+        // Upload new gallery images
+        const galleryUrls = await Promise.all(req.files.images.map(f => uploadToS3(f)));
+        product.images = galleryUrls;
       }
 
-      const uploadedUrls = []
-      for (const file of req.files) {
-        const url = await uploadToS3(file)
-        uploadedUrls.push(url)
-      }
+      // Handle variants
+      let variants = [];
+      if (req.body.variants) {
+        try {
+          variants = JSON.parse(req.body.variants);
+        } catch {
+          variants = [];
+        }
 
-      product.image = uploadedUrls[0]
-      product.images = uploadedUrls
+        // Process variant main images
+        const variantMainFiles = req.files.variantImages || [];
+        
+        // Process variant gallery images - handle dynamic field names like variantImages_0, variantImages_1, etc.
+        const variantGalleryMap = {};
+        Object.keys(req.files).forEach(key => {
+          if (key.startsWith('variantImages_')) {
+            const idx = Number(key.split('_')[1]);
+            if (!Number.isNaN(idx)) {
+              variantGalleryMap[idx] = req.files[key];
+            }
+          }
+        });
+
+        // Update each variant with new images
+        for (let i = 0; i < variants.length; i++) {
+          const variant = variants[i];
+          const oldVariant = product.variants[i] || {};
+
+          // Handle variant main image
+          if (variantMainFiles[i]) {
+            // Delete old variant main image if exists
+            if (oldVariant.image) await deleteFromS3(oldVariant.image);
+            // Upload new variant main image
+            variant.image = await uploadToS3(variantMainFiles[i]);
+          } else if (!variant.image && oldVariant.image) {
+            // Keep existing image if no new one provided
+            variant.image = oldVariant.image;
+          }
+
+          // Handle variant gallery images
+          const galleryFiles = variantGalleryMap[i] || [];
+          if (galleryFiles.length > 0) {
+            // Delete old variant gallery images
+            if (oldVariant.images && oldVariant.images.length > 0) {
+              for (const img of oldVariant.images) {
+                if (img) await deleteFromS3(img);
+              }
+            }
+            // Upload new variant gallery images
+            const galleryUrls = await Promise.all(galleryFiles.map(f => uploadToS3(f)));
+            variant.images = galleryUrls;
+            
+            // If no main image set, use first gallery image
+            if (!variant.image && galleryUrls.length > 0) {
+              variant.image = galleryUrls[0];
+            }
+          } else if (!variant.images && oldVariant.images) {
+            // Keep existing gallery images if no new ones provided
+            variant.images = oldVariant.images;
+          }
+
+          // Ensure all variant fields exist
+          variant.name = variant.name || "";
+          variant.price = variant.price ?? 0;
+          variant.discount = variant.discount ?? 0;
+          variant.usdPrice = variant.usdPrice ?? null;
+          variant.usdDiscount = variant.usdDiscount ?? 0;
+          variant.color = variant.color || "";
+          variant.stock = variant.stock ?? 0;
+          variant.rating = variant.rating ?? 0;
+          variant.status = variant.status || "Available";
+        }
+
+        product.variants = variants;
+      }
     }
 
-    // normal fields
-    product.product = req.body.product
-    product.category = req.body.category
-    product.collection = req.body.collection
-    product.type = req.body.type
-    product.metal = req.body.metal
-    product.price = req.body.price
-    product.usdPrice = req.body.usdPrice
-    product.discount = req.body.discount
-    product.stock = req.body.stock
-    product.rating = req.body.rating
-    product.status = req.body.status
-    product.description = req.body.description
-    product.details = req.body.details
-    product.careInstructions = req.body.careInstructions
-    product.shippingAndReturn = req.body.shippingAndReturn
+    // Update other fields
+    product.product = req.body.product || product.product;
+    product.category = req.body.category || product.category;
+    product.collection = req.body.collection || product.collection;
+    product.type = req.body.type || product.type;
+    product.metal = req.body.metal || product.metal;
+    product.price = req.body.price ?? product.price;
+    product.usdPrice = req.body.usdPrice ?? product.usdPrice;
+    product.discount = req.body.discount ?? product.discount;
+    product.usdDiscount = req.body.usdDiscount ?? product.usdDiscount;
+    product.stock = req.body.stock ?? product.stock;
+    product.rating = req.body.rating ?? product.rating;
+    product.status = req.body.status || product.status;
+    product.description = req.body.description || product.description;
+    product.details = req.body.details || product.details;
+    product.careInstructions = req.body.careInstructions || product.careInstructions;
+    product.shippingAndReturn = req.body.shippingAndReturn || product.shippingAndReturn;
 
-    // ✅ parse reviews safely
+    // Parse reviews
     if (req.body.reviews) {
       try {
-        product.reviews = JSON.parse(req.body.reviews)
+        product.reviews = JSON.parse(req.body.reviews);
       } catch (e) {
-        product.reviews = []
+        console.error("Error parsing reviews:", e);
+        // Keep existing reviews if parsing fails
       }
     }
 
-    if (req.body.variants) {
-      try {
-        product.variants = JSON.parse(req.body.variants)
-      } catch (e) {
-        product.variants = []
-      }
-    }
-
-    await product.save()
-    res.status(200).json(product)
+    await product.save();
+    res.status(200).json(product);
   } catch (err) {
-    res.status(500).json({ message: err.message })
+    console.error("❌ Error updating product:", err);
+    res.status(500).json({ message: err.message });
   }
-}
+};
 
-// Get All Products
+
 export const getProducts = async (req, res) => {
   try {
     const products = await productModel.find().sort({ createdAt: -1 }).populate("collection", "title") // 👈 fetch only _id + title from collection

@@ -59,7 +59,16 @@ const upload = multer() // memory storage
 
 router.get("/search", searchProducts)
 
-router.post("/", upload.any(), createProduct)
+// router.post("/", upload.any(), createProduct)
+router.post(
+  "/",
+  upload.fields([
+    { name: "image", maxCount: 1 }, // main product image
+    { name: "images", maxCount: 10 }, // product gallery images
+    { name: "variantImages", maxCount: 50 }, // variant main images (one per variant)
+  ]),
+  createProduct,
+)
 
 router.get("/", getProducts)
 router.get("/filters", getFilters)
@@ -68,7 +77,16 @@ router.get("/collection/:collectionSlug", getProductsByCollection)
 router.get("/:id", getProductById)
 
 // keep PUT as-is (single/multiple product gallery updates)
-router.put("/:id", upload.array("images", 4), updateProduct)
+router.put(
+  "/:id",
+  upload.fields([
+    { name: "image", maxCount: 1 },
+    { name: "images", maxCount: 10 },
+    { name: "variantImages", maxCount: 50 },
+    { name: /variantImages_\d+/, maxCount: 10 }, // Dynamic field names for variant galleries
+  ]),
+  updateProduct
+)
 
 router.delete("/:id", deleteProduct)
 
