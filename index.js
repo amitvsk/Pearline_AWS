@@ -68,12 +68,20 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'build'))); // Change 'build' if needed
 
 // Redirect all requests to index.html
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'build', 'index.html'));
-});
+// app.get(/.*/, (req, res) => {
+//   res.sendFile(path.join(__dirname, 'build', 'index.html'));
+// });
 
 
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
+});
+
+
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Pearline is connected and running!',
+    timestamp: new Date()
+  });
 });
