@@ -3,6 +3,7 @@ import cors from 'cors';
 import { connectDb } from './config/db.js';
 import path from "path";
 import { fileURLToPath } from "url"; // ✅ Required for __dirname in ESM
+import 'dotenv/config'; // Add this to load environment variables
 import userRouter from './routes/user/userRoute.js';
 import adminRouter from './routes/admin/adminRoute.js';
 import bannerRouter from './routes/admin/homeBannerRoute.js';
@@ -31,7 +32,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 
 // MongoDB Connection
 connectDb();
