@@ -73,6 +73,28 @@ export const getProductsByCollection = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// Get products by collection title
+export const getProductsByCollectionTitle = async (req, res) => {
+  try {
+    // First find the collection by title
+    const collectionTitle = decodeURIComponent(req.params.title);
+    const collection = await Collection.findOne({ title: collectionTitle });
+    
+    if (!collection) {
+      return res.status(404).json({ message: "Collection not found" });
+    }
+
+    // Then find products with that collection ID
+    const products = await Product.find({ collection: collection._id })
+      .populate("collection")
+      .sort({ createdAt: -1 });
+    
+    res.json({ products, collection }); // Return both products and collection data
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 // Update collection
 export const updateCollection = async (req, res) => {
   try {
