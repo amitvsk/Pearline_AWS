@@ -34,7 +34,20 @@ import dashboardRouter from "./routes/dashboardRoutes.js";
 import userAddressRouter from "./routes/user/addressRoutes.js";
 const app = express();
 app.use(express.json());
-app.use(cors());
+
+// CORS configuration
+const corsOptions = {
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174', 
+    'https://pearline.in',
+    'https://www.pearline.in',
+    'https://pearline.web.app'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 
 const PORT = 8000;
 
@@ -69,6 +82,16 @@ app.use("/homebanner2" , homebanner2Router);
 app.use("/admin/transactions", transactionRouter);
 app.use("/api/admin/dashboard", dashboardRouter);
 app.use("/user/addresses", userAddressRouter);
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({ 
+    status: "ok", 
+    message: "Server is running",
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ✅ Fix for __dirname and __filename in ESM
 // const __filename = fileURLToPath(import.meta.url);
 // const __dirname = path.dirname(__filename);
