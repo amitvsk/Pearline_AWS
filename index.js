@@ -42,7 +42,8 @@ const corsOptions = {
     'http://localhost:5174', 
     'https://pearline.in',
     'https://www.pearline.in',
-    'https://pearline.web.app'
+    'https://pearline.web.app',
+    'https://api.pearline.in'
   ],
   credentials: true,
   optionsSuccessStatus: 200
@@ -108,6 +109,9 @@ app.use("/",(req,res)=>{
   return res.status(200).json({status:true,message:"welcome to pearline"})
 })
 
-app.listen(PORT, () => {
-  console.log(`Server is running on ${PORT}`);
+// app.listen(PORT, () => {
+//   console.log(`Server is running on ${PORT}`);
+// });
+app.listen(8000, '0.0.0.0', () => {
+  console.log("Server running on port 8000");
 });
