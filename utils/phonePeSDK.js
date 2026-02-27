@@ -109,6 +109,14 @@ class PhonePeSDK {
     const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64');
     const xVerify = this._generateXVerify(payload, '/pg/v1/pay');
 
+    console.log('PhonePe Payment Request:', {
+      apiUrl: this.apiUrl,
+      merchantId: this.merchantId,
+      merchantTransactionId,
+      amount: payload.amount,
+      endpoint: `${this.apiUrl}/pg/v1/pay`
+    });
+
     try {
       const response = await axios.post(
         `${this.apiUrl}/pg/v1/pay`,
@@ -122,6 +130,8 @@ class PhonePeSDK {
         }
       );
 
+      console.log('PhonePe Payment Response:', response.data);
+
       return {
         success: response.data.success,
         code: response.data.code,
@@ -130,7 +140,16 @@ class PhonePeSDK {
         paymentUrl: response.data.data?.instrumentResponse?.redirectInfo?.url
       };
     } catch (error) {
-      console.error('PhonePe Payment Creation Error:', error.response?.data || error.message);
+      console.error('PhonePe Payment Creation Error:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+          headers: error.config?.headers
+        }
+      });
       throw new Error(error.response?.data?.message || 'Payment creation failed');
     }
   }

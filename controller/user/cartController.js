@@ -206,7 +206,25 @@ export const getCart = async (req, res) => {
     const userId = req.user._id;
     const cart = await Cart.find({ user: userId }).populate("product");
     
-    res.json(cart);
+    // Filter out items with null products and remove them from database
+    const validCart = [];
+    const invalidItemIds = [];
+    
+    for (const item of cart) {
+      if (item.product) {
+        validCart.push(item);
+      } else {
+        invalidItemIds.push(item._id);
+      }
+    }
+    
+    // Remove invalid items from database
+    if (invalidItemIds.length > 0) {
+      await Cart.deleteMany({ _id: { $in: invalidItemIds } });
+      console.log(`Cleaned up ${invalidItemIds.length} invalid cart items`);
+    }
+    
+    res.json(validCart);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

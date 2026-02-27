@@ -16,9 +16,16 @@ export const createOrderAndInitiatePayment = async (req, res) => {
       return res.status(400).json({ message: "Cart is empty" });
     }
 
+    // Filter out invalid cart items (where product is null)
+    const validCartItems = cartItems.filter(item => item.product);
+    
+    if (validCartItems.length === 0) {
+      return res.status(400).json({ message: "No valid products in cart" });
+    }
+
     // Check stock availability
-    for (const item of cartItems) {
-      if (item.quantity > item.product.stock) {
+    for (const item of validCartItems) {
+      if (item.product.stock && item.quantity > item.product.stock) {
         return res.status(400).json({
           message: `Not enough stock for ${item.product.product}`,
         });
@@ -26,8 +33,10 @@ export const createOrderAndInitiatePayment = async (req, res) => {
     }
 
     // Calculate total
-    const total = cartItems.reduce(
-      (sum, item) => sum + item.product.price * item.quantity,
+    const total = validCartItems.reduce(
+      (sum, item) => {
+        return sum + (item.product.price || 0) * item.quantity;
+      },
       0
     );
 
@@ -37,7 +46,7 @@ export const createOrderAndInitiatePayment = async (req, res) => {
     // Create order (status: Pending, paymentStatus: Pending)
     const order = new Order({
       user: userId,
-      products: cartItems.map((item) => ({
+      products: validCartItems.map((item) => ({
         product: item.product._id,
         quantity: item.quantity,
       })),
@@ -70,6 +79,28 @@ export const createOrderAndInitiatePayment = async (req, res) => {
 
     // Initiate PhonePe payment using SDK
     const phoneNumber = shippingAddress.phone || "9999999999";
+    
+    // Check if mock mode is enabled
+    const isMockMode = process.env.PHONEPE_MOCK_MODE === 'true';
+    
+    if (isMockMode) {
+      // Mock payment for testing
+      console.log('Mock Payment Mode - Skipping PhonePe API call');
+      
+      const mockPaymentUrl = `${process.env.FRONTEND_URL || 'http://localhost:5174'}/payment/mock?orderId=${order._id}&merchantTransactionId=${merchantTransactionId}`;
+      
+      res.status(200).json({
+        success: true,
+        message: "Payment initiated successfully (Mock Mode)",
+        orderId: order._id,
+        merchantTransactionId,
+        paymentUrl: mockPaymentUrl,
+        isMockMode: true
+      });
+      return;
+    }
+    
+    // Real PhonePe payment
     const paymentResponse = await phonePeSDK.createPayment({
       merchantTransactionId,
       amount: total,

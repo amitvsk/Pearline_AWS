@@ -31,6 +31,7 @@ import offerRouter from "./routes/admin/offerRoutes.js";
 import homebanner2Router from "./routes/admin/homebanner2Routes.js";
 import transactionRouter from "./routes/admin/transactionRoutes.js";
 import dashboardRouter from "./routes/dashboardRoutes.js";
+import userAddressRouter from "./routes/user/addressRoutes.js";
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -67,6 +68,7 @@ app.use("/offer" , offerRouter);
 app.use("/homebanner2" , homebanner2Router);
 app.use("/admin/transactions", transactionRouter);
 app.use("/api/admin/dashboard", dashboardRouter);
+app.use("/user/addresses", userAddressRouter);
 // ✅ Fix for __dirname and __filename in ESM
 // const __filename = fileURLToPath(import.meta.url);
 // const __dirname = path.dirname(__filename);
