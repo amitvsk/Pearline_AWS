@@ -10,6 +10,11 @@ import {
   getQuickStats
 } from '../controller/admin/dashboardController.js';
 
+// Test route
+router.get('/test', (req, res) => {
+  res.json({ success: true, message: 'Dashboard routes are working!' });
+});
+
 // Dashboard routes
 router.get('/stats', getDashboardStats);
 router.get('/sales', getSalesData);

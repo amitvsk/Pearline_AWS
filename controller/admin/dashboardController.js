@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 // Get dashboard stats
 const getDashboardStats = async (req, res) => {
   try {
+    console.log('📊 Dashboard stats endpoint hit');
     const currentDate = new Date();
     const lastMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
     const currentMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
@@ -90,13 +91,14 @@ const getDashboardStats = async (req, res) => {
     res.json({ success: true, stats });
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
 // Get sales data for chart
 const getSalesData = async (req, res) => {
   try {
+    console.log('📈 Sales data endpoint hit');
     const salesData = await Order.aggregate([
       { $match: { status: 'Delivered' } },
       {
@@ -122,13 +124,14 @@ const getSalesData = async (req, res) => {
     res.json({ success: true, salesData: formattedData });
   } catch (error) {
     console.error('Error fetching sales data:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
 // Get category distribution
 const getCategoryData = async (req, res) => {
   try {
+    console.log('📦 Category data endpoint hit');
     const categories = await Product.aggregate([
       {
         $group: {
@@ -147,13 +150,14 @@ const getCategoryData = async (req, res) => {
     res.json({ success: true, categories: formattedCategories });
   } catch (error) {
     console.error('Error fetching category data:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
 // Get recent activities
 const getRecentActivities = async (req, res) => {
   try {
+    console.log('🔔 Activities endpoint hit');
     // Get recent orders
     const recentOrders = await Order.find()
       .populate('user', 'name')
@@ -215,13 +219,24 @@ const getRecentActivities = async (req, res) => {
     res.json({ success: true, activities: limitedActivities });
   } catch (error) {
     console.error('Error fetching recent activities:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
 // Get top products
 const getTopProducts = async (req, res) => {
   try {
+    console.log('🏆 Top products endpoint hit');
+    
+    // First check if we have any orders
+    const orderCount = await Order.countDocuments();
+    console.log(`Total orders in DB: ${orderCount}`);
+    
+    if (orderCount === 0) {
+      // Return empty array if no orders
+      return res.json({ success: true, products: [] });
+    }
+    
     const topProducts = await Order.aggregate([
       { $match: { status: 'Delivered' } },
       { $unwind: '$products' },
@@ -242,28 +257,31 @@ const getTopProducts = async (req, res) => {
           as: 'product'
         }
       },
-      { $unwind: '$product' }
+      { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } }
     ]);
 
-    const formattedProducts = topProducts.map((item, index) => ({
-      id: item._id,
-      name: item.product.name,
-      sales: item.totalSales,
-      revenue: item.totalRevenue,
-      image: getProductEmoji(item.product.category),
-      trend: `+${(Math.random() * 20 + 5).toFixed(0)}%` // Random trend for now
-    }));
+    const formattedProducts = topProducts
+      .filter(item => item.product) // Filter out items without product data
+      .map((item, index) => ({
+        id: item._id,
+        name: item.product.product || item.product.name || 'Unknown Product',
+        sales: item.totalSales,
+        revenue: item.totalRevenue,
+        image: getProductEmoji(item.product.category),
+        trend: `+${(Math.random() * 20 + 5).toFixed(0)}%` // Random trend for now
+      }));
 
     res.json({ success: true, products: formattedProducts });
   } catch (error) {
     console.error('Error fetching top products:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
 // Get weekly performance data
 const getWeeklyData = async (req, res) => {
   try {
+    console.log('📅 Weekly data endpoint hit');
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -294,13 +312,14 @@ const getWeeklyData = async (req, res) => {
     res.json({ success: true, weeklyData: formattedData });
   } catch (error) {
     console.error('Error fetching weekly data:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
 // Get quick stats
 const getQuickStats = async (req, res) => {
   try {
+    console.log('⚡ Quick stats endpoint hit');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -334,7 +353,7 @@ const getQuickStats = async (req, res) => {
     res.json({ success: true, quickStats });
   } catch (error) {
     console.error('Error fetching quick stats:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 };
 
