@@ -105,6 +105,7 @@ app.get("/health", (req, res) => {
 //   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 // });
 
+// Default route - MUST BE LAST
 app.use("/",(req,res)=>{
   return res.status(200).json({status:true,message:"welcome to pearline"})
 })
