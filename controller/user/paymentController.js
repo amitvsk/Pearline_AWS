@@ -158,49 +158,79 @@ export const createOrderAndInitiatePayment = async (req, res) => {
 // Payment callback handler
 export const paymentCallback = async (req, res) => {
   try {
-    const { orderId } = req.query;
+    // Support both query params (GET) and body (POST)
+    const orderId = req.query.orderId || req.body.orderId;
+    const merchantTransactionId = req.query.merchantTransactionId || req.body.merchantTransactionId;
 
-    console.log("Payment Callback - Order ID:", orderId);
+    console.log("Payment Callback Received:", {
+      method: req.method,
+      orderId,
+      merchantTransactionId,
+      query: req.query,
+      body: req.body,
+      headers: req.headers
+    });
 
     if (!orderId) {
-      return res.status(400).send("Order ID missing");
+      console.error("Order ID missing in callback");
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=missing_order_id`);
     }
 
     const order = await Order.findById(orderId);
     if (!order) {
-      return res.status(404).send("Order not found");
+      console.error("Order not found:", orderId);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=order_not_found`);
     }
 
+    console.log("Order found:", {
+      orderId: order._id,
+      merchantTransactionId: order.merchantTransactionId,
+      status: order.status,
+      paymentStatus: order.paymentStatus
+    });
+
     // Check payment status using official SDK
-    const statusResponse = await phonePeClient.getOrderStatus(order.merchantTransactionId);
-    
-    console.log("Payment Status Response:", statusResponse);
-
-    if (statusResponse.state === "COMPLETED") {
-      // Payment successful - complete the order
-      await completeOrder(order, statusResponse);
+    try {
+      const statusResponse = await phonePeClient.getOrderStatus(order.merchantTransactionId);
       
-      // Redirect to success page
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?orderId=${orderId}`);
-    } else {
-      // Payment failed or pending
-      order.status = "Failed";
-      order.paymentStatus = "Failed";
-      await order.save();
+      console.log("Payment Status Response:", statusResponse);
 
-      const transaction = await Transaction.findOne({ orderId: order._id });
-      if (transaction) {
-        transaction.status = statusResponse.state || "FAILED";
-        transaction.responseMessage = statusResponse.message || "Payment failed";
-        await transaction.save();
+      if (statusResponse.state === "COMPLETED") {
+        // Payment successful - complete the order
+        console.log("Payment successful, completing order...");
+        await completeOrder(order, statusResponse);
+        
+        // Redirect to success page
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?orderId=${orderId}`);
+      } else if (statusResponse.state === "PENDING") {
+        // Payment still pending
+        console.log("Payment pending, redirecting to pending page...");
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/pending?orderId=${orderId}`);
+      } else {
+        // Payment failed
+        console.log("Payment failed:", statusResponse);
+        order.status = "Failed";
+        order.paymentStatus = "Failed";
+        await order.save();
+
+        const transaction = await Transaction.findOne({ orderId: order._id });
+        if (transaction) {
+          transaction.status = statusResponse.state || "FAILED";
+          transaction.responseMessage = statusResponse.message || "Payment failed";
+          await transaction.save();
+        }
+
+        // Redirect to failure page
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?orderId=${orderId}`);
       }
-
-      // Redirect to failure page
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?orderId=${orderId}`);
+    } catch (statusError) {
+      console.error("Error checking payment status:", statusError);
+      // If status check fails, redirect to pending page
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/pending?orderId=${orderId}&error=status_check_failed`);
     }
   } catch (err) {
     console.error("Payment callback error:", err);
-    res.status(500).send("Payment verification failed");
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=callback_error`);
   }
 };
 
