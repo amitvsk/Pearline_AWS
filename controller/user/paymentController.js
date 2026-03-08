@@ -172,13 +172,29 @@ export const paymentCallback = async (req, res) => {
 
     if (!orderId) {
       console.error("Order ID missing in callback");
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=missing_order_id`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/failed?error=missing_order_id`);
     }
 
-    const order = await Order.findById(orderId);
+    let order;
+    try {
+      order = await Order.findById(orderId);
+    } catch (dbError) {
+      console.error("Database error finding order:", dbError);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/failed?error=database_error`);
+    }
+
     if (!order) {
       console.error("Order not found:", orderId);
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=order_not_found`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/failed?error=order_not_found`);
+    }
+
+    // Verify order has merchantTransactionId
+    if (!order.merchantTransactionId) {
+      console.error("Order missing merchantTransactionId:", {
+        orderId: order._id,
+        orderData: order
+      });
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/failed?error=invalid_order_data`);
     }
 
     console.log("Order found:", {
@@ -190,27 +206,28 @@ export const paymentCallback = async (req, res) => {
 
     // If order is already completed, redirect to success
     if (order.status === "Paid" && order.paymentStatus === "Completed") {
-      console.log("Order already completed, redirecting to success page");
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?orderId=${orderId}`);
+      console.log("Order already completed by webhook, redirecting to success page");
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/success?orderId=${orderId}`);
     }
 
     // Check payment status using official SDK
     try {
+      console.log("Checking payment status for:", order.merchantTransactionId);
       const statusResponse = await phonePeClient.getOrderStatus(order.merchantTransactionId);
       
       console.log("Payment Status Response:", statusResponse);
 
       if (statusResponse.state === "COMPLETED") {
         // Payment successful - complete the order
-        console.log("Payment successful, completing order...");
+        console.log("Payment successful via callback, completing order...");
         await completeOrder(order, statusResponse);
         
         // Redirect to success page
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?orderId=${orderId}`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/success?orderId=${orderId}`);
       } else if (statusResponse.state === "PENDING") {
         // Payment still pending
         console.log("Payment pending, redirecting to pending page...");
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/pending?orderId=${orderId}`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/pending?orderId=${orderId}`);
       } else {
         // Payment failed
         console.log("Payment failed:", statusResponse);
@@ -226,17 +243,32 @@ export const paymentCallback = async (req, res) => {
         }
 
         // Redirect to failure page
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?orderId=${orderId}`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/failed?orderId=${orderId}`);
       }
     } catch (statusError) {
-      console.error("Error checking payment status:", statusError);
-      // If status check fails, redirect to pending page
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/pending?orderId=${orderId}&error=status_check_failed`);
+      console.error("Error checking payment status:", {
+        error: statusError.message,
+        stack: statusError.stack,
+        merchantTransactionId: order?.merchantTransactionId
+      });
+      
+      // If order is already completed (race condition with webhook), redirect to success
+      const freshOrder = await Order.findById(orderId);
+      if (freshOrder && freshOrder.status === "Paid" && freshOrder.paymentStatus === "Completed") {
+        console.log("Order was completed by webhook during status check, redirecting to success");
+        return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/success?orderId=${orderId}`);
+      }
+      
+      // Otherwise redirect to pending page
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/pending?orderId=${orderId}&error=status_check_failed`);
     }
   } catch (err) {
-    console.error("Payment callback error:", err);
+    console.error("Payment callback error:", {
+      error: err.message,
+      stack: err.stack
+    });
     const errorMessage = err.message || 'callback_error';
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=${encodeURIComponent(errorMessage)}`);
+    return res.redirect(`${process.env.FRONTEND_URL || 'https://pearline.in'}/payment/failed?error=${encodeURIComponent(errorMessage)}`);
   }
 };
 
