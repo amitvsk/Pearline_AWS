@@ -1,24 +1,33 @@
-import PhonePeSDK from '../utils/phonePeSDK.js';
+import { StandardCheckoutClient, Env } from 'pg-sdk-node';
 
-// Initialize PhonePe SDK
-const phonePeSDK = new PhonePeSDK({
-  merchantId: process.env.PHONEPE_MERCHANT_ID,
-  saltKey: process.env.PHONEPE_SALT_KEY,
-  saltIndex: process.env.PHONEPE_SALT_INDEX,
-  apiUrl: process.env.PHONEPE_API_URL,
-  redirectUrl: process.env.PHONEPE_REDIRECT_URL,
-  callbackUrl: process.env.PHONEPE_WEBHOOK_URL,
-  env: process.env.NODE_ENV === 'production' ? 'production' : 'uat'
+// Initialize PhonePe SDK using official pg-sdk-node
+const clientId = process.env.PHONEPE_MERCHANT_ID || "SU2602261559251369533340";
+const clientSecret = process.env.PHONEPE_SALT_KEY || "5615933d-0907-4c39-8e49-0a363aae476a";
+const clientVersion = 1;
+
+// Determine environment
+const env = process.env.NODE_ENV === 'production' ? Env.PRODUCTION : Env.PRODUCTION;
+
+// Create SDK client instance
+const phonePeClient = StandardCheckoutClient.getInstance(
+  clientId,
+  clientSecret,
+  clientVersion,
+  env
+);
+
+console.log('PhonePe SDK Initialized:', {
+  merchantId: clientId,
+  environment: env === Env.PRODUCTION ? 'PRODUCTION' : 'SANDBOX',
+  version: clientVersion
 });
 
-export default phonePeSDK;
+export default phonePeClient;
 
 // Export config for backward compatibility
 export const phonePeConfig = {
-  merchantId: process.env.PHONEPE_MERCHANT_ID,
-  saltKey: process.env.PHONEPE_SALT_KEY,
-  saltIndex: process.env.PHONEPE_SALT_INDEX,
-  apiUrl: process.env.PHONEPE_API_URL,
-  redirectUrl: process.env.PHONEPE_REDIRECT_URL,
-  webhookUrl: process.env.PHONEPE_WEBHOOK_URL
+  merchantId: clientId,
+  saltKey: clientSecret,
+  saltIndex: clientVersion,
+  env: env
 };

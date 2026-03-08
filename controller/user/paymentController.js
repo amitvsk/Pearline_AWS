@@ -2,7 +2,9 @@ import Order from "../../model/user/Order.js";
 import Transaction from "../../model/user/Transaction.js";
 import Cart from "../../model/user/Cart.js";
 import productModel from "../../model/admin/productModel.js";
-import phonePeSDK from "../../config/phonepe.js";
+import phonePeClient from "../../config/phonepe.js";
+import { CreateSdkOrderRequest } from 'pg-sdk-node';
+import crypto from 'crypto';
 
 // Create order and initiate payment
 export const createOrderAndInitiatePayment = async (req, res) => {
@@ -40,8 +42,8 @@ export const createOrderAndInitiatePayment = async (req, res) => {
       0
     );
 
-    // Generate unique merchant transaction ID using SDK
-    const merchantTransactionId = phonePeSDK.constructor.generateTransactionId('TXN');
+    // Generate unique merchant transaction ID
+    const merchantTransactionId = `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
     // Create order (status: Pending, paymentStatus: Pending)
     const order = new Order({
@@ -77,7 +79,7 @@ export const createOrderAndInitiatePayment = async (req, res) => {
     order.transactionId = transaction._id;
     await order.save();
 
-    // Initiate PhonePe payment using SDK
+    // Initiate PhonePe payment using official SDK
     const phoneNumber = shippingAddress.phone || "9999999999";
     
     // Check if mock mode is enabled
@@ -100,41 +102,53 @@ export const createOrderAndInitiatePayment = async (req, res) => {
       return;
     }
     
-    // Real PhonePe payment
-    const paymentResponse = await phonePeSDK.createPayment({
-      merchantTransactionId,
-      amount: total,
-      merchantUserId: userId.toString(),
-      mobileNumber: phoneNumber,
-      redirectUrl: `${process.env.PHONEPE_REDIRECT_URL}?orderId=${order._id}`,
-      callbackUrl: process.env.PHONEPE_WEBHOOK_URL
+    // Real PhonePe payment using official SDK
+    const redirectUrl = `${process.env.PHONEPE_REDIRECT_URL}?orderId=${order._id}`;
+    
+    const paymentRequest = CreateSdkOrderRequest.StandardCheckoutBuilder()
+      .merchantOrderId(merchantTransactionId)
+      .amount(total * 100) // Convert to paise
+      .redirectUrl(redirectUrl)
+      .build();
+
+    console.log('PhonePe Payment Request:', {
+      merchantOrderId: merchantTransactionId,
+      amount: total * 100,
+      redirectUrl
     });
 
-    if (paymentResponse.success) {
-      res.status(200).json({
-        success: true,
-        message: "Payment initiated successfully",
-        orderId: order._id,
-        merchantTransactionId,
-        paymentUrl: paymentResponse.paymentUrl,
-        paymentData: paymentResponse.data
-      });
-    } else {
+    const response = await phonePeClient.pay(paymentRequest);
+    
+    console.log('PhonePe Payment Response:', response);
+
+    const checkoutUrl = response.redirectUrl;
+    
+    if (!checkoutUrl) {
+      console.error("Invalid PhonePe response:", response);
+      
       // Update order and transaction status to failed
       order.status = "Failed";
       order.paymentStatus = "Failed";
       await order.save();
 
       transaction.status = "FAILED";
-      transaction.responseMessage = paymentResponse.message;
+      transaction.responseMessage = "PhonePe did not return a URL";
       await transaction.save();
 
-      res.status(400).json({
+      return res.status(500).json({ 
         success: false,
-        message: "Payment initiation failed",
-        error: paymentResponse.message
+        error: "PhonePe did not return a URL" 
       });
     }
+
+    res.status(200).json({
+      success: true,
+      message: "Payment initiated successfully",
+      orderId: order._id,
+      merchantTransactionId,
+      paymentUrl: checkoutUrl,
+      phonePeOrderId: response.orderId
+    });
   } catch (err) {
     console.error("Payment initiation error:", err);
     res.status(500).json({ message: err.message });
@@ -145,9 +159,8 @@ export const createOrderAndInitiatePayment = async (req, res) => {
 export const paymentCallback = async (req, res) => {
   try {
     const { orderId } = req.query;
-    const callbackData = req.body;
 
-    console.log("Payment Callback Data:", callbackData);
+    console.log("Payment Callback - Order ID:", orderId);
 
     if (!orderId) {
       return res.status(400).send("Order ID missing");
@@ -158,26 +171,27 @@ export const paymentCallback = async (req, res) => {
       return res.status(404).send("Order not found");
     }
 
-    // Check payment status using SDK
-    const statusResponse = await phonePeSDK.checkStatus(order.merchantTransactionId);
+    // Check payment status using official SDK
+    const statusResponse = await phonePeClient.getOrderStatus(order.merchantTransactionId);
+    
+    console.log("Payment Status Response:", statusResponse);
 
-    if (phonePeSDK.constructor.isPaymentSuccessful(statusResponse)) {
+    if (statusResponse.state === "COMPLETED") {
       // Payment successful - complete the order
-      await completeOrder(order, statusResponse.data);
+      await completeOrder(order, statusResponse);
       
       // Redirect to success page
       return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?orderId=${orderId}`);
     } else {
-      // Payment failed
+      // Payment failed or pending
       order.status = "Failed";
       order.paymentStatus = "Failed";
       await order.save();
 
       const transaction = await Transaction.findOne({ orderId: order._id });
       if (transaction) {
-        transaction.status = "FAILED";
-        transaction.responseCode = statusResponse.code;
-        transaction.responseMessage = statusResponse.message;
+        transaction.status = statusResponse.state || "FAILED";
+        transaction.responseMessage = statusResponse.message || "Payment failed";
         await transaction.save();
       }
 
@@ -193,23 +207,18 @@ export const paymentCallback = async (req, res) => {
 // PhonePe Webhook handler
 export const paymentWebhook = async (req, res) => {
   try {
-    const xVerify = req.headers['x-verify'];
-    const base64Response = req.body.response;
+    const webhookData = req.body;
 
-    console.log("Webhook received:", { xVerify, base64Response });
+    console.log("Webhook received:", webhookData);
 
-    // Verify and decode webhook using SDK
-    let decodedResponse;
-    try {
-      decodedResponse = phonePeSDK.handleWebhook(xVerify, base64Response);
-    } catch (error) {
-      console.error("Invalid webhook signature:", error.message);
-      return res.status(401).json({ success: false, message: "Invalid signature" });
+    // The official SDK handles webhook verification internally
+    // Extract transaction details from webhook
+    const { merchantTransactionId, transactionId, state, responseCode } = webhookData;
+
+    if (!merchantTransactionId) {
+      console.error("Merchant transaction ID missing in webhook");
+      return res.status(400).json({ success: false, message: "Invalid webhook data" });
     }
-
-    console.log("Decoded webhook data:", decodedResponse);
-
-    const { merchantTransactionId, transactionId, amount, code, message: responseMessage } = decodedResponse;
 
     // Find transaction
     const transaction = await Transaction.findOne({ merchantTransactionId });
@@ -220,9 +229,8 @@ export const paymentWebhook = async (req, res) => {
 
     // Update transaction
     transaction.phonePeTransactionId = transactionId;
-    transaction.responseCode = code;
-    transaction.responseMessage = responseMessage;
-    transaction.webhookData = decodedResponse;
+    transaction.responseCode = responseCode;
+    transaction.webhookData = webhookData;
 
     // Find order
     const order = await Order.findById(transaction.orderId);
@@ -231,18 +239,20 @@ export const paymentWebhook = async (req, res) => {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    if (code === "PAYMENT_SUCCESS") {
+    if (state === "COMPLETED") {
       // Payment successful
       transaction.status = "SUCCESS";
+      transaction.responseMessage = "Payment completed";
       await transaction.save();
 
       // Complete the order
-      await completeOrder(order, decodedResponse);
+      await completeOrder(order, webhookData);
 
       return res.status(200).json({ success: true, message: "Payment successful" });
     } else {
       // Payment failed
       transaction.status = "FAILED";
+      transaction.responseMessage = webhookData.message || "Payment failed";
       await transaction.save();
 
       order.status = "Failed";
@@ -268,9 +278,9 @@ async function completeOrder(order, paymentData) {
   const transaction = await Transaction.findOne({ orderId: order._id });
   if (transaction) {
     transaction.status = "SUCCESS";
-    transaction.phonePeTransactionId = paymentData.transactionId;
-    transaction.responseCode = paymentData.code;
-    transaction.responseMessage = paymentData.message;
+    transaction.phonePeTransactionId = paymentData.transactionId || paymentData.phonePeTransactionId;
+    transaction.responseCode = paymentData.responseCode || paymentData.code;
+    transaction.responseMessage = paymentData.message || "Payment completed";
     await transaction.save();
   }
 
@@ -293,15 +303,15 @@ export const checkPaymentStatusEndpoint = async (req, res) => {
   try {
     const { merchantTransactionId } = req.params;
 
-    // Use SDK to check status
-    const statusResponse = await phonePeSDK.checkStatus(merchantTransactionId);
+    // Use official SDK to check status
+    const statusResponse = await phonePeClient.getOrderStatus(merchantTransactionId);
 
     res.status(200).json({
       success: true,
       data: statusResponse,
-      isSuccessful: phonePeSDK.constructor.isPaymentSuccessful(statusResponse),
-      isPending: phonePeSDK.constructor.isPaymentPending(statusResponse),
-      isFailed: phonePeSDK.constructor.isPaymentFailed(statusResponse)
+      isSuccessful: statusResponse.state === "COMPLETED",
+      isPending: statusResponse.state === "PENDING",
+      isFailed: statusResponse.state === "FAILED"
     });
   } catch (err) {
     console.error("Status check error:", err);
