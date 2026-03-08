@@ -167,8 +167,7 @@ export const paymentCallback = async (req, res) => {
       orderId,
       merchantTransactionId,
       query: req.query,
-      body: req.body,
-      headers: req.headers
+      body: req.body
     });
 
     if (!orderId) {
@@ -188,6 +187,12 @@ export const paymentCallback = async (req, res) => {
       status: order.status,
       paymentStatus: order.paymentStatus
     });
+
+    // If order is already completed, redirect to success
+    if (order.status === "Paid" && order.paymentStatus === "Completed") {
+      console.log("Order already completed, redirecting to success page");
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?orderId=${orderId}`);
+    }
 
     // Check payment status using official SDK
     try {
@@ -230,7 +235,8 @@ export const paymentCallback = async (req, res) => {
     }
   } catch (err) {
     console.error("Payment callback error:", err);
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=callback_error`);
+    const errorMessage = err.message || 'callback_error';
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed?error=${encodeURIComponent(errorMessage)}`);
   }
 };
 
@@ -239,15 +245,43 @@ export const paymentWebhook = async (req, res) => {
   try {
     const webhookData = req.body;
 
-    console.log("Webhook received:", webhookData);
+    console.log("Webhook received:", JSON.stringify(webhookData, null, 2));
 
-    // The official SDK handles webhook verification internally
-    // Extract transaction details from webhook
-    const { merchantTransactionId, transactionId, state, responseCode } = webhookData;
+    // Handle different webhook formats from PhonePe SDK
+    let merchantTransactionId, transactionId, state, responseCode;
+    
+    // Format 1: Direct webhook data
+    if (webhookData.merchantTransactionId) {
+      merchantTransactionId = webhookData.merchantTransactionId;
+      transactionId = webhookData.transactionId;
+      state = webhookData.state;
+      responseCode = webhookData.responseCode;
+    }
+    // Format 2: SDK webhook with payload
+    else if (webhookData.payload) {
+      merchantTransactionId = webhookData.payload.merchantOrderId;
+      transactionId = webhookData.payload.orderId;
+      state = webhookData.payload.state;
+      responseCode = webhookData.event;
+    }
+    // Format 3: Nested data structure
+    else if (webhookData.data) {
+      merchantTransactionId = webhookData.data.merchantTransactionId || webhookData.data.merchantOrderId;
+      transactionId = webhookData.data.transactionId || webhookData.data.orderId;
+      state = webhookData.data.state;
+      responseCode = webhookData.data.responseCode || webhookData.code;
+    }
+
+    console.log("Extracted webhook data:", {
+      merchantTransactionId,
+      transactionId,
+      state,
+      responseCode
+    });
 
     if (!merchantTransactionId) {
       console.error("Merchant transaction ID missing in webhook");
-      return res.status(400).json({ success: false, message: "Invalid webhook data" });
+      return res.status(400).json({ success: false, message: "Invalid webhook data - missing merchantTransactionId" });
     }
 
     // Find transaction
@@ -256,6 +290,12 @@ export const paymentWebhook = async (req, res) => {
       console.error("Transaction not found:", merchantTransactionId);
       return res.status(404).json({ success: false, message: "Transaction not found" });
     }
+
+    console.log("Transaction found:", {
+      transactionId: transaction._id,
+      orderId: transaction.orderId,
+      currentStatus: transaction.status
+    });
 
     // Update transaction
     transaction.phonePeTransactionId = transactionId;
@@ -269,27 +309,44 @@ export const paymentWebhook = async (req, res) => {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
+    console.log("Order found:", {
+      orderId: order._id,
+      currentStatus: order.status,
+      paymentStatus: order.paymentStatus
+    });
+
     if (state === "COMPLETED") {
       // Payment successful
+      console.log("Webhook: Payment completed, processing order...");
+      
       transaction.status = "SUCCESS";
       transaction.responseMessage = "Payment completed";
       await transaction.save();
 
-      // Complete the order
-      await completeOrder(order, webhookData);
+      // Complete the order (only if not already completed)
+      if (order.status !== "Paid") {
+        await completeOrder(order, webhookData.payload || webhookData.data || webhookData);
+        console.log("Order completed successfully via webhook");
+      } else {
+        console.log("Order already completed, skipping");
+      }
 
       return res.status(200).json({ success: true, message: "Payment successful" });
     } else {
       // Payment failed
-      transaction.status = "FAILED";
-      transaction.responseMessage = webhookData.message || "Payment failed";
+      console.log("Webhook: Payment failed or pending:", state);
+      
+      transaction.status = state === "PENDING" ? "PENDING" : "FAILED";
+      transaction.responseMessage = webhookData.message || `Payment ${state}`;
       await transaction.save();
 
-      order.status = "Failed";
-      order.paymentStatus = "Failed";
-      await order.save();
+      if (state === "FAILED") {
+        order.status = "Failed";
+        order.paymentStatus = "Failed";
+        await order.save();
+      }
 
-      return res.status(200).json({ success: true, message: "Payment failed" });
+      return res.status(200).json({ success: true, message: `Payment ${state}` });
     }
   } catch (err) {
     console.error("Webhook error:", err);

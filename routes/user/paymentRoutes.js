@@ -31,6 +31,8 @@ router.get("/callback/test", (req, res) => {
 });
 
 // Payment webhook (PhonePe sends payment status here)
+// Support both GET and POST methods
+router.get("/webhook", paymentWebhook);
 router.post("/webhook", paymentWebhook);
 
 // Check payment status
