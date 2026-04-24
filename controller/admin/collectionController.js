@@ -1,39 +1,18 @@
 import Collection from "../../model/admin/collectionModel.js";
-import Product from "../../model/admin/productModel.js"
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import Product from "../../model/admin/productModel.js";
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import dotenv from "dotenv";
+import { saveToLocal, deleteFromLocal, toFullUrl } from "../../utils/localStorage.js";
 
 dotenv.config();
-
-const s3 = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
-
-const uploadToS3 = async (file) => {
-  const fileKey = `${uuidv4()}${path.extname(file.originalname)}`;
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: process.env.AWS_BUCKET_NAME,
-      Key: fileKey,
-      Body: file.buffer,
-      ContentType: file.mimetype,
-    })
-  );
-  return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
-};
 
 // Add new collection
 export const createCollection = async (req, res) => {
   try {
     let imageUrl = "";
     if (req.file) {
-      imageUrl = await uploadToS3(req.file);
+      imageUrl = await saveToLocal(req.file);
     }
 
     const collection = await Collection.create({
@@ -102,7 +81,7 @@ export const updateCollection = async (req, res) => {
 
     if (req.file) {
       // Upload new image if provided
-      imageUrl = await uploadToS3(req.file);
+      imageUrl = await saveToLocal(req.file);
     }
 
     const updatedData = {
@@ -110,11 +89,18 @@ export const updateCollection = async (req, res) => {
       link: req.body.link,
       homePageDisplay: req.body.homePageDisplay || false,
       pearlineCollection: req.body.pearlineCollection || "none",
-         homePageDisplay2: req.body.homePageDisplay2 || false,
+      homePageDisplay2: req.body.homePageDisplay2 || false,
       pearlineCollection2: req.body.pearlineCollection2 || "none",
     };
 
-    if (imageUrl) updatedData.image = imageUrl;
+    if (imageUrl) {
+      // Delete old image if exists
+      const oldCollection = await Collection.findById(req.params.id);
+      if (oldCollection && oldCollection.image) {
+        await deleteFromLocal(oldCollection.image);
+      }
+      updatedData.image = imageUrl;
+    }
 
     const collection = await Collection.findByIdAndUpdate(
       req.params.id,
@@ -157,7 +143,17 @@ export const getCollections = async (req, res) => {
     }
 
     const collections = await Collection.find(query).sort({ createdAt: -1 });
-    res.json(collections);
+    
+    // Convert relative URLs to full URLs
+    const processedCollections = collections.map(col => {
+      const colObj = col.toObject();
+      if (colObj.image) {
+        colObj.image = toFullUrl(colObj.image);
+      }
+      return colObj;
+    });
+    
+    res.json(processedCollections);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -179,7 +175,17 @@ export const getCollections2 = async (req, res) => {
     }
 
     const collections = await Collection.find(query).sort({ createdAt: -1 });
-    res.json(collections);
+    
+    // Convert relative URLs to full URLs
+    const processedCollections = collections.map(col => {
+      const colObj = col.toObject();
+      if (colObj.image) {
+        colObj.image = toFullUrl(colObj.image);
+      }
+      return colObj;
+    });
+    
+    res.json(processedCollections);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

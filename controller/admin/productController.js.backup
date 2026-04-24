@@ -1,46 +1,36 @@
 import productModel from "../../model/admin/productModel.js";
+import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+import path from "path";
 import collectionModel from "../../model/admin/collectionModel.js";
 import { saveToLocal, deleteFromLocal, toFullUrl } from "../../utils/localStorage.js";
-import dotenv from "dotenv";
 
 dotenv.config();
 
-// Create Product
 export const createProduct = async (req, res) => {
   try {
-    console.log("📦 Create Product Request:", {
-      hasFiles: !!req.files,
-      filesCount: req.files?.length || 0,
-      fileFields: req.files?.map(f => f.fieldname) || [],
-      bodyKeys: Object.keys(req.body)
-    });
-
-    // Main product image
+    // Main product image (single)
     const mainImageFile = (req.files || []).find((f) => f.fieldname === "image");
     const mainImageUrl = mainImageFile ? await saveToLocal(mainImageFile) : "";
-    console.log("🖼️ Main image:", mainImageUrl);
 
-    // Product gallery images
+    // Product gallery images (multiple 'images')
     const productGalleryFiles = (req.files || []).filter((f) => f.fieldname === "images");
     const galleryUrls = await Promise.all(productGalleryFiles.map((f) => saveToLocal(f)));
-    console.log("🖼️ Gallery images:", galleryUrls.length);
 
-    // Variants
+    // Variants JSON
     let variants = [];
     if (req.body.variants) {
       try {
         variants = JSON.parse(req.body.variants);
-        console.log("📋 Parsed variants:", variants.length);
-      } catch (parseErr) {
-        console.error("❌ Error parsing variants:", parseErr);
+      } catch {
         variants = [];
       }
     }
 
-    // Variant images
+    // Variant main images
     const variantMainFiles = (req.files || []).filter((f) => f.fieldname === "variantImages");
+
     const variantGalleryMap = {};
-    
     (req.files || [])
       .filter((f) => /^variantImages_\d+$/.test(f.fieldname))
       .forEach((f) => {
@@ -51,10 +41,7 @@ export const createProduct = async (req, res) => {
         }
       });
 
-    console.log("🖼️ Variant main files:", variantMainFiles.length);
-    console.log("🖼️ Variant gallery map:", Object.keys(variantGalleryMap));
-
-    // Process variants
+    // Build each variant
     for (let i = 0; i < variants.length; i++) {
       if (variantMainFiles[i]) {
         variants[i].image = await saveToLocal(variantMainFiles[i]);
@@ -73,10 +60,9 @@ export const createProduct = async (req, res) => {
         variants[i].images = [];
       }
 
-      // Set defaults
       variants[i].name = variants[i].name || "";
       variants[i].price = variants[i].price ?? 0;
-      variants[i].discount = variants[i].discount ?? 0;
+unt ?? 0;
       variants[i].usdPrice = variants[i].usdPrice ?? null;
       variants[i].usdDiscount = variants[i].usdDiscount ?? 0;
       variants[i].color = variants[i].color || "";
@@ -85,7 +71,6 @@ export const createProduct = async (req, res) => {
       variants[i].status = variants[i].status || "Available";
     }
 
-    // Reviews
     let reviews = [];
     if (req.body.reviews) {
       try {
@@ -95,10 +80,9 @@ export const createProduct = async (req, res) => {
       }
     }
 
-    // Create product
     const product = await productModel.create({
       image: mainImageUrl,
-      images: galleryUrls,
+      imaalleryUrls,
       variants,
       product: req.body.product,
       category: req.body.category,
@@ -114,143 +98,77 @@ export const createProduct = async (req, res) => {
       status: req.body.status || "Available",
       description: req.body.description || "",
       details: req.body.details || "",
-      careInstructions: req.body.careInstructions || "",
+      careInstructions: req.ructions || "",
       shippingAndReturn: req.body.shippingAndReturn || "",
       reviews,
     });
 
-    console.log("✅ Product created successfully:", product._id);
     return res.status(201).json(product);
   } catch (err) {
-    console.error("❌ Error creating product:", {
-      message: err.message,
-      stack: err.stack,
-      name: err.name
-    });
-    return res.status(500).json({ 
-      message: err.message,
-      error: err.name,
-      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    console.error("❌ Error creating product:", err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
-// Update Product
 export const updateProduct = async (req, res) => {
   try {
-    console.log("📝 Update Product Request:", {
-      id: req.params.id,
-      hasFiles: !!req.files,
-      filesCount: req.files?.length || 0,
-      body: Object.keys(req.body),
-      bodyValues: req.body
-    });
-
     const product = await productModel.findById(req.params.id);
-    if (!product) {
-      console.log("❌ Product not found:", req.params.id);
-      return res.status(404).json({ message: "Product not found" });
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+.length > 0) {
+      if (product.images && product.images.length > 0) {
+        for (const img of product.images) {
+          await deleteFromLocal(img);
+        }
+      }
+
+      const uploadedUrls = [];
+      for (const file of req.files) {
+        const url = await saveToLocal(file);
+        uploadedUrls.push(url);
+      }
+
+      product.image = uploadedUrls[0];
+      product.images = uploadedUrls;
     }
 
-    console.log("📦 Current product data:", {
-      id: product._id,
-      product: product.product,
-      hasImages: !!product.images,
-      imageCount: product.images?.length || 0
-    });
+    product.product = req.body.product;
+    product.category = req.body.category;
+    product.collection = req.body.collection;
+    product.type = req.body.type;
+    product.metal = req.body.metal;
+    product.price = req.body.price;
+    product.usdPrice = req.body.usdPrice;
+    product.discount = req.body.discount;
+    product.usdDiscount = req.body.usdDiscount;
+    product.stock = req.body.stock;
+    product.rating = req.body.rating;
+    product.status = req.body.status;
+    product.description = req.body.description;
+    product.details = req.body.details;
+s;
+    product.shippingAndReturn = req.body.shippingAndReturn;
 
-    // Handle new images
-    if (req.files && req.files.length > 0) {
-      console.log("🖼️ Processing new images...");
+    if (req.body.reviews) {
       try {
-        // Delete old images (skip AWS S3 URLs)
-        if (product.images && product.images.length > 0) {
-          for (const img of product.images) {
-            await deleteFromLocal(img);
-          }
-        }
-
-        const uploadedUrls = [];
-        for (const file of req.files) {
-          const url = await saveToLocal(file);
-          uploadedUrls.push(url);
-          console.log("✅ Saved image:", url);
-        }
-
-        product.image = uploadedUrls[0];
-        product.images = uploadedUrls;
-      } catch (imgError) {
-        console.error("❌ Error processing images:", imgError);
-        return res.status(500).json({ message: "Error processing images: " + imgError.message });
+        product.reviews = JSON.parse(req.body.reviews);
+      } catch (e) {
+        product.reviews = [];
       }
     }
 
-    // Update fields
-    try {
-      if (req.body.product) product.product = req.body.product;
-      if (req.body.category) product.category = req.body.category;
-      
-      // Handle collection field carefully
-      if (req.body.collection !== undefined) {
-        if (req.body.collection === "" || req.body.collection === "null" || req.body.collection === null) {
-          product.collection = null;
-        } else {
-          product.collection = req.body.collection;
-        }
+    if (req.body.variants) {
+      try {
+        product.variants = JSON.parse(req.body.variants);
+      } catch (e) {
+        product.variants = [];
       }
-      
-      if (req.body.type) product.type = req.body.type;
-      if (req.body.metal) product.metal = req.body.metal;
-      if (req.body.price !== undefined) product.price = req.body.price;
-      if (req.body.usdPrice !== undefined) product.usdPrice = req.body.usdPrice;
-      if (req.body.discount !== undefined) product.discount = req.body.discount;
-      if (req.body.usdDiscount !== undefined) product.usdDiscount = req.body.usdDiscount;
-      if (req.body.stock !== undefined) product.stock = req.body.stock;
-      if (req.body.rating !== undefined) product.rating = req.body.rating;
-      if (req.body.status) product.status = req.body.status;
-      if (req.body.description) product.description = req.body.description;
-      if (req.body.details) product.details = req.body.details;
-      if (req.body.careInstructions) product.careInstructions = req.body.careInstructions;
-      if (req.body.shippingAndReturn) product.shippingAndReturn = req.body.shippingAndReturn;
-
-      if (req.body.reviews) {
-        try {
-          product.reviews = JSON.parse(req.body.reviews);
-        } catch (e) {
-          console.log("⚠️ Failed to parse reviews:", e.message);
-          product.reviews = [];
-        }
-      }
-
-      if (req.body.variants) {
-        try {
-          product.variants = JSON.parse(req.body.variants);
-        } catch (e) {
-          console.log("⚠️ Failed to parse variants:", e.message);
-          product.variants = [];
-        }
-      }
-    } catch (fieldError) {
-      console.error("❌ Error updating fields:", fieldError);
-      return res.status(500).json({ message: "Error updating fields: " + fieldError.message });
     }
 
-    console.log("💾 Saving product...");
     await product.save();
-    console.log("✅ Product updated successfully:", product._id);
-    
     res.status(200).json(product);
   } catch (err) {
-    console.error("❌ Error updating product:", {
-      message: err.message,
-      stack: err.stack,
-      name: err.name
-    });
-    res.status(500).json({ 
-      message: err.message, 
-      error: err.name,
-      details: err.stack 
-    });
+});
   }
 };
 
@@ -259,12 +177,12 @@ export const getProducts = async (req, res) => {
   try {
     const products = await productModel.find().sort({ createdAt: -1 }).populate("collection", "title");
     
-    // Convert to full URLs
+    // Convert relative URLs to full URLs
     const processedProducts = products.map(product => {
       const productObj = product.toObject();
       
       if (productObj.image) productObj.image = toFullUrl(productObj.image);
-      if (productObj.images) productObj.images = productObj.images.map(img => toFullUrl(img));
+      if (productObj.images) pmg));
       
       if (productObj.variants) {
         productObj.variants = productObj.variants.map(v => ({
@@ -286,7 +204,7 @@ export const getProducts = async (req, res) => {
 // Get Product by ID
 export const getProductById = async (req, res) => {
   try {
-    const product = await productModel.findById(req.params.id).populate("collection", "title");
+    const ct = await productModel.findById(req.params.id).populate("collection", "title");
     if (!product) return res.status(404).json({ message: "Product not found" });
     
     const productObj = product.toObject();
@@ -328,12 +246,12 @@ export const deleteProduct = async (req, res) => {
   }
 };
 
-// Get Filters
+// GET /product/filters
 export const getFilters = async (req, res) => {
   try {
     const categories = await productModel.distinct("category");
     const collections = await productModel.distinct("collection");
-    const metals = await productModel.distinct("metal");
+    const meductModel.distinct("metal");
     const types = await productModel.distinct("type");
 
     res.json({ categories, collections, metals, types });
@@ -361,11 +279,10 @@ export const getProductsByType = async (req, res) => {
   }
 };
 
-// Get Products by Collection
 export const getProductsByCollection = async (req, res) => {
   try {
     const { collectionSlug } = req.params;
-    const collection = await collectionModel.findOne({ title: collectionSlug });
+    const collection = await collectionSlug });
 
     if (!collection) {
       return res.status(404).json({ success: false, message: "Collection not found" });
@@ -390,7 +307,6 @@ export const getProductsByCollection = async (req, res) => {
   }
 };
 
-// Search Products
 export const searchProducts = async (req, res) => {
   try {
     let { keyword } = req.query;
@@ -399,7 +315,7 @@ export const searchProducts = async (req, res) => {
     }
 
     keyword = keyword.trim();
-    const searchFields = ["product", "category", "metal", "description", "details"];
+    const searchFiel["product", "category", "metal", "description", "details"];
     const orQuery = searchFields.map((field) => ({
       [field]: { $regex: keyword, $options: "i" },
     }));

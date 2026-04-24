@@ -1,9 +1,13 @@
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '.env') }); // Must be first
 import express from 'express';
 import cors from 'cors';
 import { connectDb } from './config/db.js';
-import path from "path";
-import { fileURLToPath } from "url"; // ✅ Required for __dirname in ESM
-import 'dotenv/config'; // Add this to load environment variables
 import userRouter from './routes/user/userRoute.js';
 import adminRouter from './routes/admin/adminRoute.js';
 import bannerRouter from './routes/admin/homeBannerRoute.js';
@@ -43,14 +47,19 @@ const corsOptions = {
     'https://pearline.in',
     'https://www.pearline.in',
     'https://pearline.web.app',
-    'https://api.pearline.in'
+    'http://localhost:8000'
   ],
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
 
-const PORT = 8000;
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+const PORT = process.env.PORT || 8000;
 
 // MongoDB Connection
 connectDb();
@@ -105,14 +114,19 @@ app.get("/health", (req, res) => {
 //   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 // });
 
-// Default route - MUST BE LAST
-app.use("/",(req,res)=>{
+// Default route - MUST BE LAST - Use app.get instead of app.use to avoid catching all routes
+app.get("/",(req,res)=>{
   return res.status(200).json({status:true,message:"welcome to pearline"})
+})
+
+// 404 handler for unmatched routes
+app.use((req, res) => {
+  res.status(404).json({status:false, message:"Route not found"})
 })
 
 // app.listen(PORT, () => {
 //   console.log(`Server is running on ${PORT}`);
 // });
-app.listen(8000, '0.0.0.0', () => {
-  console.log("Server running on port 8000");
+app.listen(8000,'0.0.0.0', () => {
+  console.log("Server running on port 8000")
 });

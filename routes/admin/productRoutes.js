@@ -55,10 +55,19 @@ import {
 } from "../../controller/admin/productController.js"
 
 const router = express.Router()
-const upload = multer() // memory storage
+
+// Configure multer for memory storage
+const storage = multer.memoryStorage()
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+})
 
 router.get("/search", searchProducts)
 
+// Use upload.any() to accept all file fields dynamically
 router.post("/", upload.any(), createProduct)
 
 router.get("/", getProducts)
@@ -67,8 +76,8 @@ router.get("/type/:type", getProductsByType)
 router.get("/collection/:collectionSlug", getProductsByCollection)
 router.get("/:id", getProductById)
 
-// keep PUT as-is (single/multiple product gallery updates)
-router.put("/:id", upload.array("images", 4), updateProduct)
+// Update route with proper file handling
+router.put("/:id", upload.any(), updateProduct)
 
 router.delete("/:id", deleteProduct)
 

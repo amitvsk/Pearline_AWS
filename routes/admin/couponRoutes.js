@@ -3,6 +3,7 @@ import {
   createCoupon,
   getCoupons,
   applyCoupon,
+  updateCoupon,
   deleteCoupon,
 } from "../../controller/admin/couponController.js";
 
@@ -11,6 +12,7 @@ const router = express.Router();
 // Admin
 router.post("/", createCoupon);
 router.get("/", getCoupons);
+router.put("/:id", updateCoupon);
 router.delete("/:id", deleteCoupon);
 
 // User

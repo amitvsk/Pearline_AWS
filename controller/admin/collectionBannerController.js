@@ -1,42 +1,8 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { v4 as uuidv4 } from "uuid";
-import path from "path";
 import dotenv from "dotenv";
 import Banner from "../../model/admin/collectionBannerModel.js";
+import { saveToLocal, deleteFromLocal, toFullUrl } from "../../utils/localStorage.js";
 
 dotenv.config();
-
-// AWS S3 setup
-const s3 = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-  }
-});
-
-// Upload helper
-const uploadToS3 = async (file) => {
-  const fileKey = `${uuidv4()}${path.extname(file.originalname)}`;
-  const uploadParams = {
-    Bucket: process.env.AWS_BUCKET_NAME,
-    Key: fileKey,
-    Body: file.buffer,
-    ContentType: file.mimetype
-  };
-  await s3.send(new PutObjectCommand(uploadParams));
-  return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
-};
-
-// Delete helper
-const deleteFromS3 = async (fileUrl) => {
-  try {
-    const key = fileUrl.split("/").pop();
-    await s3.send(new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }));
-  } catch (err) {
-    console.error("Error deleting from S3:", err.message);
-  }
-};
 
 // CRUD Operations
 export const uploadCollectionBanner = async (req, res) => {
@@ -47,8 +13,8 @@ export const uploadCollectionBanner = async (req, res) => {
       });
     }
 
-    const imageUrl = await uploadToS3(req.files.image[0]);
-    const mobImageUrl = await uploadToS3(req.files.mobImage[0]);
+    const imageUrl = await saveToLocal(req.files.image[0]);
+    const mobImageUrl = await saveToLocal(req.files.mobImage[0]);
 
     const banner = await Banner.create({ 
       image: imageUrl, 
@@ -67,7 +33,13 @@ export const uploadCollectionBanner = async (req, res) => {
 export const getCollectionBanner = async (req, res) => {
   try {
     const banner = await Banner.findOne().sort({ createdAt: -1 });
-    res.status(200).json(banner || {});
+    if (banner) {
+      const bannerObj = banner.toObject();
+      if (bannerObj.image) bannerObj.image = toFullUrl(bannerObj.image);
+      if (bannerObj.mobImage) bannerObj.mobImage = toFullUrl(bannerObj.mobImage);
+      return res.status(200).json(bannerObj);
+    }
+    res.status(200).json({});
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -76,7 +48,13 @@ export const getCollectionBanner = async (req, res) => {
 export const getAllCollectionBanners = async (req, res) => {
   try {
     const banners = await Banner.find().sort({ createdAt: -1 });
-    res.status(200).json(banners);
+    const processedBanners = banners.map(banner => {
+      const bannerObj = banner.toObject();
+      if (bannerObj.image) bannerObj.image = toFullUrl(bannerObj.image);
+      if (bannerObj.mobImage) bannerObj.mobImage = toFullUrl(bannerObj.mobImage);
+      return bannerObj;
+    });
+    res.status(200).json(processedBanners);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -91,14 +69,14 @@ export const updateCollectionBanner = async (req, res) => {
 
     // Update desktop image if provided
     if (req.files && req.files.image) {
-      await deleteFromS3(banner.image);
-      banner.image = await uploadToS3(req.files.image[0]);
+      await deleteFromLocal(banner.image);
+      banner.image = await saveToLocal(req.files.image[0]);
     }
 
     // Update mobile image if provided
     if (req.files && req.files.mobImage) {
-      await deleteFromS3(banner.mobImage);
-      banner.mobImage = await uploadToS3(req.files.mobImage[0]);
+      await deleteFromLocal(banner.mobImage);
+      banner.mobImage = await saveToLocal(req.files.mobImage[0]);
     }
 
     await banner.save();
@@ -118,9 +96,9 @@ export const deleteCollectionBanner = async (req, res) => {
       return res.status(404).json({ message: "Banner not found" });
     }
 
-    // Delete both images from S3
-    await deleteFromS3(banner.image);
-    await deleteFromS3(banner.mobImage);
+    // Delete both images from local storage
+    await deleteFromLocal(banner.image);
+    await deleteFromLocal(banner.mobImage);
     
     await Banner.findByIdAndDelete(req.params.id);
     res.status(200).json({ message: "Banner deleted successfully" });
