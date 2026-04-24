@@ -114,7 +114,10 @@ class PhonePeSDK {
       merchantId: this.merchantId,
       merchantTransactionId,
       amount: payload.amount,
-      endpoint: `${this.apiUrl}/pg/v1/pay`
+      endpoint: `${this.apiUrl}/pg/v1/pay`,
+      payload: payload,
+      base64Payload: base64Payload.substring(0, 100) + '...',
+      xVerify: xVerify
     });
 
     try {
@@ -126,7 +129,8 @@ class PhonePeSDK {
             'Content-Type': 'application/json',
             'X-VERIFY': xVerify,
             'accept': 'application/json'
-          }
+          },
+          timeout: 30000 // 30 second timeout
         }
       );
 
@@ -142,15 +146,25 @@ class PhonePeSDK {
     } catch (error) {
       console.error('PhonePe Payment Creation Error:', {
         status: error.response?.status,
+        statusText: error.response?.statusText,
         data: error.response?.data,
         message: error.message,
+        code: error.code,
         config: {
           url: error.config?.url,
           method: error.config?.method,
-          headers: error.config?.headers
+          headers: error.config?.headers,
+          data: error.config?.data
         }
       });
-      throw new Error(error.response?.data?.message || 'Payment creation failed');
+      
+      // Return detailed error for debugging
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.error || 
+                          error.message || 
+                          'Payment creation failed';
+      
+      throw new Error(`PhonePe Error: ${errorMessage} (Status: ${error.response?.status || 'N/A'})`);
     }
   }
 
